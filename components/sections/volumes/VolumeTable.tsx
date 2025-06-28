@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Volume, Instance } from '../../../types';
 import Button from '../../common/Button';
 import Select from '../../common/Select';
@@ -20,8 +20,8 @@ const VolumeStatusBadge: React.FC<{ status: string }> = ({ status }) => {
 
 interface VolumeTableProps {
   volumes: Volume[];
-  instances: Instance[]; 
-  onAction: (volumeId: string, action: 'delete' | 'attach' | 'detach' | 'extend' | 'create-snapshot', details?: string | { newSize?: number; snapshotName?: string } ) => void;
+  instances: Instance[];
+  onAction: (volumeId: string, action: 'delete' | 'attach' | 'detach' | 'extend' | 'create-snapshot', details?: string | { newSize?: number; snapshotName?: string }) => void;
 }
 
 const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction }) => {
@@ -30,7 +30,7 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
 
   const toggleDropdown = (volumeId: string) => {
     setDropdownOpen(dropdownOpen === volumeId ? null : volumeId);
-    setSelectedInstanceToAttach(''); 
+    setSelectedInstanceToAttach('');
   };
 
   // Action Handlers - refactored from the large AGENTS.md comment
@@ -71,6 +71,7 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
     setDropdownOpen(null);
   };
 
+
   const getAttachedInstanceName = (volume: Volume) => {
     if (volume.attachments && volume.attachments.length > 0) {
       const instanceId = volume.attachments[0].server_id;
@@ -94,10 +95,9 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
         </thead>
         <tbody className="divide-y divide-slate-700">
           {volumes.map((volume) => {
-            // If volume.status is string (as per type), toLowerCase() is safe.
             const safeStatus = volume.status.toLowerCase();
             const isVolumeInUse = safeStatus === 'in-use';
-            
+
             return (
             <tr key={volume.id} className="hover:bg-slate-700/30 transition-colors">
               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-100">

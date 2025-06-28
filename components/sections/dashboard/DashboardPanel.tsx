@@ -9,7 +9,7 @@ import { Quota, Instance, ServiceCatalogEntry, Flavor, Volume, Network as OpenSt
 import QuickStatCard from './QuickStatCard';
 import Card from '../../common/Card';
 import Spinner from '../../common/Spinner';
-import { Server, Database, Network as NetworkLucideIcon, Cpu, Zap, AlertTriangle } from 'lucide-react';
+import { Server, Database, Network as NetworkLucideIcon, Cpu, Zap, AlertTriangle, Shield } from 'lucide-react';
 import QuotaBar from '../quotas/QuotaBar';
 import Tooltip from '../../common/Tooltip';
 import { useToast } from '../../../hooks/useToast';
