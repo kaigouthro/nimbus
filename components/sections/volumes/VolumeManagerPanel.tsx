@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../hooks/useAuth';
 import { 
     getServiceEndpoint, fetchVolumes, fetchInstances,
-    createVolumeAPI, deleteVolumeAPI, attachVolumeAPI, detachVolumeAPI
+    createVolumeAPI, deleteVolumeAPI, attachVolumeAPI, detachVolumeAPI,
+    extendVolumeAPI, createVolumeSnapshotAPI // Added createVolumeSnapshotAPI
 } from '../../../services/OpenStackAPIService';
 import { Volume, Instance } from '../../../types';
 import Button from '../../common/Button';
@@ -94,7 +95,15 @@ const VolumeManagerPanel: React.FC = () => {
     }
   };
 
-  const handleVolumeAction = async (volumeId: string, action: 'delete' | 'attach' | 'detach', instanceId?: string) => {
+  // Updated action type to include 'extend' and 'create-snapshot' and relevant details
+  type VolumeActionType = 'delete' | 'attach' | 'detach' | 'extend' | 'create-snapshot';
+  interface VolumeActionDetails {
+    instanceId?: string;
+    newSize?: number;
+    snapshotName?: string;
+  }
+
+  const handleVolumeAction = async (volumeId: string, action: VolumeActionType, details?: VolumeActionDetails) => {
     if (!authToken || !serviceCatalog) { 
       addToast("Cannot perform action: Not authenticated.", 'error'); 
       return; 
@@ -108,28 +117,81 @@ const VolumeManagerPanel: React.FC = () => {
     }
 
     try {
-      if (action === 'delete') {
-        await deleteVolumeAPI(authToken, volumeUrl, volumeId);
-        addToast(`Volume ${volumeId} deletion initiated.`, 'success');
-      } else if (action === 'attach' && instanceId) {
-        await attachVolumeAPI(authToken, computeUrl, instanceId, volumeId);
-        addToast(`Attaching volume ${volumeId} to instance ${instanceId}.`, 'success');
-      } else if (action === 'detach') {
-        const volume = volumes.find(v => v.id === volumeId);
-        const currentAttachment = volume?.attachments?.find(att => att.volume_id === volumeId);
-        if (volume && currentAttachment?.server_id) {
-          await detachVolumeAPI(authToken, computeUrl, currentAttachment.server_id, volumeId); 
-          addToast(`Detaching volume ${volumeId}.`, 'success');
-        } else {
-          throw new Error("Volume not attached or attachment details missing.");
-        }
+      let actionCompleted = false;
+      switch (action) {
+        case 'delete':
+          await deleteVolumeAPI(authToken, volumeUrl, volumeId);
+          addToast(`Volume ${volumeId} deletion initiated.`, 'success');
+          actionCompleted = true;
+          break;
+        case 'attach':
+          if (details?.instanceId) {
+            await attachVolumeAPI(authToken, computeUrl, details.instanceId, volumeId);
+            addToast(`Attaching volume ${volumeId} to instance ${details.instanceId}.`, 'success');
+            actionCompleted = true;
+          } else {
+            throw new Error("Instance ID is required to attach a volume.");
+          }
+          break;
+        case 'detach':
+          // eslint-disable-next-line no-case-declarations
+          const volumeToDetach = volumes.find(v => v.id === volumeId);
+          // eslint-disable-next-line no-case-declarations
+          const currentAttachment = volumeToDetach?.attachments?.find(att => att.volume_id === volumeId);
+          if (volumeToDetach && currentAttachment?.server_id) {
+            await detachVolumeAPI(authToken, computeUrl, currentAttachment.server_id, volumeId);
+            addToast(`Detaching volume ${volumeId}.`, 'success');
+            actionCompleted = true;
+          } else {
+            throw new Error("Volume not attached or attachment details missing.");
+          }
+          break;
+        case 'extend':
+          if (details?.newSize && volumeUrl) { // volumeUrl check for type safety, already checked above
+            const volToExtend = volumes.find(v => v.id === volumeId);
+            if (!volToExtend) throw new Error(`Volume ${volumeId} not found.`);
+            if (details.newSize <= volToExtend.size) {
+                 addToast(`New size (${details.newSize}GB) must be greater than current size (${volToExtend.size}GB).`, 'error');
+                 actionCompleted = false; // Explicitly set to false as it's a pre-check fail
+                 // No need to throw, just prevent API call and refresh
+            } else {
+                await extendVolumeAPI(authToken, volumeUrl, volumeId, details.newSize);
+                addToast(`Volume ${volumeId} extension to ${details.newSize}GB initiated.`, 'success');
+                actionCompleted = true;
+            }
+          } else {
+            throw new Error("New size is required to extend a volume.");
+          }
+          break;
+        case 'create-snapshot':
+          if (details?.snapshotName && volumeUrl) {
+            const volToSnapshot = volumes.find(v => v.id === volumeId);
+            if (!volToSnapshot) throw new Error(`Volume ${volumeId} not found.`);
+            // TODO: Consider adding a 'force' option if snapshotting in-use volumes is desired and API supports it.
+            // For now, assume snapshot can be taken (OpenStack usually allows snapshotting in-use volumes)
+            await createVolumeSnapshotAPI(authToken, volumeUrl, volumeId, details.snapshotName);
+            addToast(`Volume snapshot '${details.snapshotName}' creation initiated for volume ${volumeId}.`, 'success');
+            actionCompleted = true;
+          } else {
+            throw new Error("Snapshot name is required to create a volume snapshot.");
+          }
+          break;
+        default:
+          const _exhaustiveCheck: never = action;
+          addToast(`Unsupported volume action: ${action}`, 'warning'); // Use action for better message
+          // No need to set actionCompleted here as it's an unknown action
+          return; // Exit early for unsupported actions
       }
-      setTimeout(fetchData, 3000); 
+
+      if (actionCompleted) {
+        // Refresh data, potentially longer for snapshot as it's a new resource being created.
+        setTimeout(fetchData, action === 'create-snapshot' ? 4000 : 3000);
+      }
     } catch (err) {
        console.error(`Error performing ${action} on volume ${volumeId}:`, err);
        const errorMsg = `Failed to ${action} volume: ${(err as Error).message}`;
-       setError(errorMsg);
-       addToast(errorMsg, 'error');
+       setError(errorMsg); // Keep showing error in the panel
+       addToast(errorMsg, 'error'); // Also show as a toast
     }
   };
 

@@ -4,7 +4,8 @@ import {
     getServiceEndpoint, fetchInstances, fetchFlavors, fetchImages, 
     fetchNetworks, fetchSecurityGroups, fetchKeyPairs,
     launchInstanceAPI, terminateInstanceAPI, controlInstancePowerAPI,
-    getInstanceConsoleUrlAPI, shelveInstanceAPI, unshelveInstanceAPI
+    getInstanceConsoleUrlAPI, shelveInstanceAPI, unshelveInstanceAPI, createInstanceSnapshotAPI,
+    attachVolumeAPI, detachVolumeAPI // Added attach/detach
 } from '../../../services/OpenStackAPIService';
 import { Instance, Flavor, Image as OpenStackImage, Network, SecurityGroup, KeyPair } from '../../../types';
 import Button from '../../common/Button';
@@ -15,7 +16,7 @@ import { PlusCircle, RefreshCw } from 'lucide-react';
 import Card from '../../common/Card';
 import { useToast } from '../../../hooks/useToast';
 
-type InstanceAction = 'start' | 'stop' | 'reboot' | 'terminate' | 'get-console' | 'shelve' | 'unshelve' | 'attachVolume' | 'detachVolume';
+type InstanceAction = 'start' | 'stop' | 'reboot' | 'terminate' | 'get-console' | 'shelve' | 'unshelve' | 'attachVolume' | 'detachVolume' | 'create-snapshot';
 
 
 const InstanceManagerPanel: React.FC = () => {
@@ -184,14 +185,69 @@ const InstanceManagerPanel: React.FC = () => {
           await unshelveInstanceAPI(authToken, computeUrl, instanceId);
           addToast(`Instance ${instanceId} unshelve initiated.`, 'success');
           break;
+        case 'create-snapshot':
+          // eslint-disable-next-line no-case-declarations
+          const currentInstanceForSnapshot = instances.find(inst => inst.id === instanceId);
+          // eslint-disable-next-line no-case-declarations
+          const snapshotNameSuggestion = `snapshot-${currentInstanceForSnapshot?.name || instanceId}-${new Date().toISOString().split('T')[0]}`;
+          // eslint-disable-next-line no-case-declarations
+          const snapshotName = window.prompt(`Enter a name for the snapshot of instance "${currentInstanceForSnapshot?.name || instanceId}":`, snapshotNameSuggestion);
+          if (snapshotName) {
+            await createInstanceSnapshotAPI(authToken, computeUrl, instanceId, snapshotName);
+            addToast(`Snapshot '${snapshotName}' creation initiated for instance ${instanceId}. This may take a few moments. You can check the Images section for progress.`, 'success', 7000); // Longer toast
+          } else {
+            addToast('Snapshot creation cancelled.', 'info');
+            actionInProgress = false; // No API call was made
+          }
+          // Snapshots don't immediately update instance state. A refresh of the images list (on the Images page) would be needed.
+          // A delayed fetchData here might catch some very quick instance status changes if any (e.g. 'SNAPSHOTTING'), but not guaranteed.
+          break;
+        case 'attachVolume':
+          // eslint-disable-next-line no-case-declarations
+          const instanceToAttachTo = instances.find(inst => inst.id === instanceId);
+          // eslint-disable-next-line no-case-declarations
+          const volumeIdToAttach = window.prompt(`Enter the ID of the AVAILABLE volume to attach to instance "${instanceToAttachTo?.name || instanceId}":`);
+          if (volumeIdToAttach) {
+            // TODO: Ideally, fetch available volumes and present a select list
+            await attachVolumeAPI(authToken, computeUrl, instanceId, volumeIdToAttach);
+            addToast(`Attaching volume ${volumeIdToAttach} to instance ${instanceId}. This may take a moment.`, 'success', 5000);
+          } else {
+            addToast('Volume attach cancelled.', 'info');
+            actionInProgress = false;
+          }
+          break;
+        case 'detachVolume':
+          // eslint-disable-next-line no-case-declarations
+          const instanceToDetachFrom = instances.find(inst => inst.id === instanceId);
+          // eslint-disable-next-line no-case-declarations
+          const volumesAttached = instanceToDetachFrom?.['os-extended-volumes:volumes_attached'];
+          if (volumesAttached && volumesAttached.length > 0) {
+            // For simplicity, detaching the first volume. A real UI would let the user choose.
+            const volumeToDetach = volumesAttached[0];
+            if (window.confirm(`Are you sure you want to detach volume "${volumeToDetach.id}" from instance "${instanceToDetachFrom?.name || instanceId}"?`)) {
+              await detachVolumeAPI(authToken, computeUrl, instanceId, volumeToDetach.id); // API uses volumeId as attachmentId here
+              addToast(`Detaching volume ${volumeToDetach.id} from instance ${instanceId}. This may take a moment.`, 'success', 5000);
+            } else {
+              addToast('Volume detach cancelled.', 'info');
+              actionInProgress = false;
+            }
+          } else {
+            addToast('No volumes found attached to this instance to detach.', 'warning');
+            actionInProgress = false;
+          }
+          break;
         default:
-          console.warn(`Unsupported instance action: ${action}`);
-          addToast(`Unsupported instance action: ${action}`, 'warning');
+          // Ensure exhaustive check if new actions are added to InstanceAction type
+          const _exhaustiveCheck: never = action; // This will cause a type error if a case is missed
+          console.warn(`Unsupported instance action: ${action}`); // Use action directly in console.warn for clarity
+          addToast(`Unsupported instance action: ${action}`, 'warning'); // Use action for toast message
           actionInProgress = false;
           return; 
       }
       if (actionInProgress) {
-        setTimeout(fetchData, 2000);
+        // Slightly longer delay for snapshot to allow OpenStack to potentially start showing task state
+        // though the primary feedback is the toast and users should check Images page.
+        setTimeout(fetchData, action === 'create-snapshot' ? 4000 : 2000);
       }
     } catch (err) {
       console.error(`Error performing action ${action} on instance ${instanceId}:`, err);

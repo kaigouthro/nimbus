@@ -20,7 +20,7 @@ const VolumeStatusBadge: React.FC<{ status: string }> = ({ status }) => {
 interface VolumeTableProps {
   volumes: Volume[];
   instances: Instance[]; 
-  onAction: (volumeId: string, action: 'delete' | 'attach' | 'detach', instanceId?: string) => void;
+  onAction: (volumeId: string, action: 'delete' | 'attach' | 'detach' | 'extend' | 'create-snapshot', details?: string | { newSize?: number; snapshotName?: string } ) => void;
 }
 
 const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction }) => {
@@ -32,12 +32,46 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
     setSelectedInstanceToAttach(''); 
   };
 
-  const handleActionClick = (volumeId: string, action: 'delete' | 'attach' | 'detach') => {
-    if (action === 'attach' && !selectedInstanceToAttach) {
+  const handleActionClick = (volumeId: string, action: 'delete' | 'attach' | 'detach' | 'extend' | 'create-snapshot', currentSizeOrName?: number | string) => {
+    if (action === 'attach') {
+      if (!selectedInstanceToAttach) {
         alert("Please select an instance to attach the volume to.");
         return;
+      }
+      onAction(volumeId, action, selectedInstanceToAttach);
+    } else if (action === 'extend' && typeof currentSizeOrName === 'number') {
+      const currentSize = currentSizeOrName;
+      const newSizeStr = window.prompt(`Enter the new total size for volume ${volumeId} (current size: ${currentSize}GB). Must be larger than current size.`, (currentSize + 1).toString());
+      if (newSizeStr) {
+        const newSize = parseInt(newSizeStr, 10);
+        if (isNaN(newSize) || newSize <= currentSize) {
+          alert("Invalid size. New size must be a number greater than the current size.");
+          setDropdownOpen(null);
+          return;
+        }
+        onAction(volumeId, action, { newSize });
+      } else {
+        setDropdownOpen(null);
+        return;
+      }
+    } else if (action === 'create-snapshot') {
+      const volName = typeof currentSizeOrName === 'string' ? currentSizeOrName : volumeId;
+      const snapshotNameSuggestion = `snapshot-${volName}-${new Date().toISOString().split('T')[0]}`;
+      const snapshotName = window.prompt(`Enter a name for the snapshot of volume "${volName}":`, snapshotNameSuggestion);
+      if (snapshotName) {
+        onAction(volumeId, action, { snapshotName });
+      } else {
+        setDropdownOpen(null);
+        return;
+      }
+    } else if (action === 'delete' || action === 'detach') { // Actions without extra details from prompt
+      onAction(volumeId, action);
+    } else {
+      // Should not happen if logic is correct
+      console.error("Unhandled action or missing details in handleActionClick:", action, currentSizeOrName);
+      setDropdownOpen(null);
+      return;
     }
-    onAction(volumeId, action, selectedInstanceToAttach);
     setDropdownOpen(null);
   };
   
@@ -113,8 +147,23 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
                         <UnlinkIcon size={16} className="mr-2 text-yellow-400" /> Detach from Instance
                       </Button>
                     )}
-                    <Button onClick={() => alert('Extend Volume: Feature placeholder')} className="w-full text-sm" size="sm" variant="outline" disabled={safeStatus !== 'available'}>Extend Size</Button>
-                    <Button onClick={() => alert('Create Snapshot: Feature placeholder')} className="w-full text-sm" size="sm" variant="outline">Create Snapshot</Button>
+                    <Button
+                      onClick={() => handleActionClick(volume.id, 'extend', volume.size)}
+                      className="w-full text-sm"
+                      size="sm"
+                      variant="outline"
+                      disabled={safeStatus !== 'available'}
+                    >
+                      Extend Size
+                    </Button>
+                    <Button
+                      onClick={() => handleActionClick(volume.id, 'create-snapshot', volume.name)}
+                      className="w-full text-sm"
+                      size="sm"
+                      variant="outline"
+                    >
+                      Create Snapshot
+                    </Button>
                     
                     <div className="border-t border-slate-600 my-1"></div>
                     <Button onClick={() => {
