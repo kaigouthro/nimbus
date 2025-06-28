@@ -6,6 +6,7 @@ import {
     getServiceEndpoint, fetchInstanceDetailsAPI, 
     fetchVolumes, fetchFlavors, fetchImages, fetchSecurityGroups,
     getInstanceConsoleUrlAPI,
+    attachVolumeAPI, // Added for attaching volumes
     // Import actions needed for the detail page
     controlInstancePowerAPI,
     shelveInstanceAPI,
@@ -15,6 +16,7 @@ import {
 } from '../../../services/OpenStackAPIService';
 import { Instance, Volume, Flavor, Image as OpenStackImage, SecurityGroup } from '../../../types';
 import Card from '../../common/Card';
+import AttachVolumeModal from '../volumes/AttachVolumeModal'; // Import the new modal
 import Spinner from '../../common/Spinner';
 import Button from '../../common/Button';
 import {
@@ -75,6 +77,8 @@ const InstanceDetailPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'console' | 'metadata'>('overview');
   const [isConsoleLoading, setIsConsoleLoading] = useState(false);
   const [isPerformingAction, setIsPerformingAction] = useState(false); // For disabling buttons during actions
+  const [isAttachVolumeModalOpen, setIsAttachVolumeModalOpen] = useState(false);
+  const [attachingVolumeInProgress, setAttachingVolumeInProgress] = useState(false);
 
   const fetchData = useCallback(async (showToastOnRefresh = false) => {
     if (!authToken || !serviceCatalog || !instanceId) {
@@ -204,6 +208,32 @@ const InstanceDetailPage: React.FC = () => {
     }
   };
 
+  const handleAttachVolume = async (volumeId: string) => {
+    if (!instance || !authToken || !serviceCatalog) {
+      addToast("Cannot attach volume: Instance data or auth details missing.", 'error');
+      return;
+    }
+    const computeUrl = getServiceEndpoint(serviceCatalog, 'compute');
+    if (!computeUrl) {
+      addToast("Compute service endpoint not found.", 'error');
+      return;
+    }
+
+    setAttachingVolumeInProgress(true);
+    setIsAttachVolumeModalOpen(false); // Close modal immediately
+    try {
+      await attachVolumeAPI(authToken, computeUrl, instance.id, volumeId);
+      addToast(`Volume ${volumeId} successfully attached to ${instance.name}.`, 'success', 4000);
+      // Refresh data to show the new volume and update lists
+      await fetchData(true);
+    } catch (err) {
+      console.error(`Error attaching volume ${volumeId} to instance ${instance.id}:`, err);
+      addToast(`Failed to attach volume: ${(err as Error).message}`, 'error');
+    } finally {
+      setAttachingVolumeInProgress(false);
+    }
+  };
+
 
   const handleLoadConsole = async () => {
     if (!instance || !authToken || !serviceCatalog) {
@@ -241,13 +271,15 @@ const InstanceDetailPage: React.FC = () => {
         .filter(Boolean) as Volume[]
     : [];
 
+  const availableVolumesForAttachment = allVolumes.filter(vol => vol.status.toLowerCase() === 'available');
+
   const instanceSecurityGroups = instance?.securityGroups
     ? allSecurityGroups.filter(sg => instance.securityGroups?.includes(sg.name)) 
     : [];
 
   const isConsoleActionable = instance?.status.toLowerCase() === 'active' && instance?.powerState.toLowerCase() === 'running';
 
-  if (loading) return <div className="flex justify-center items-center h-full"><Spinner text="Loading instance details..." size="lg" /></div>;
+  if (loading && !instance) return <div className="flex justify-center items-center h-full"><Spinner text="Loading instance details..." size="lg" /></div>;
   if (error) return <div className="text-red-400 p-4 bg-red-900/30 rounded-md">{error}</div>;
   if (!instance) return <div className="text-center text-slate-400 py-8">Instance not found.</div>;
 
@@ -394,7 +426,21 @@ const InstanceDetailPage: React.FC = () => {
                     </ul>
                 ) : <p className="text-sm text-slate-400 p-2">No security groups associated.</p>}
             </Card>
-            <Card title="Attached Volumes" icon={<HardDrive className="text-slate-300" />}>
+            <Card
+              title="Attached Volumes"
+              icon={<HardDrive className="text-slate-300" />}
+              headerActions={
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setIsAttachVolumeModalOpen(true)}
+                  disabled={attachingVolumeInProgress || availableVolumesForAttachment.length === 0 || instance.status.toLowerCase() === 'shelved' || instance.status.toLowerCase() === 'shelved_offloaded' || !!instance.task_state}
+                  className="text-teal-400 border-teal-400 hover:bg-teal-500/10"
+                >
+                  {attachingVolumeInProgress ? 'Processing...' : 'Attach Volume'}
+                </Button>
+              }
+            >
                 {attachedVolumesInfo.length > 0 ? (
                     <ul className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar p-1">
                     {attachedVolumesInfo.map(vol => (
@@ -410,6 +456,14 @@ const InstanceDetailPage: React.FC = () => {
                     ))}
                     </ul>
                 ) : <p className="text-sm text-slate-400 p-2">No volumes attached.</p>}
+                 {availableVolumesForAttachment.length === 0 && attachedVolumesInfo.length === 0 && (
+                    <p className="text-xs text-slate-500 mt-2 p-2">No available volumes to attach. Create one in the Volumes section.</p>
+                )}
+                 {(instance.status.toLowerCase() === 'shelved' || instance.status.toLowerCase() === 'shelved_offloaded' || !!instance.task_state) && (
+                    <p className="text-xs text-yellow-500 mt-2 p-2">
+                        Cannot attach volumes when instance is shelved, offloaded, or has an active task. Current state: {instance.status} {instance.task_state ? `(${instance.task_state})` : ''}.
+                    </p>
+                 )}
             </Card>
           </div>
         </div>
@@ -458,6 +512,17 @@ const InstanceDetailPage: React.FC = () => {
                 </pre>
             </div>
         </Card>
+      )}
+
+      {isAttachVolumeModalOpen && instance && (
+        <AttachVolumeModal
+          isOpen={isAttachVolumeModalOpen}
+          onClose={() => setIsAttachVolumeModalOpen(false)}
+          onAttach={handleAttachVolume}
+          availableVolumes={availableVolumesForAttachment}
+          instanceName={instance.name}
+          isLoading={attachingVolumeInProgress}
+        />
       )}
     </div>
   );

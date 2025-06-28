@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Volume, Instance } from '../../../types';
 import Button from '../../common/Button';
 import Select from '../../common/Select';
-import { MoreVertical, Trash2, LinkIcon, UnlinkIcon, HardDrive } from 'lucide-react'; 
+import { MoreVertical, Trash2, LinkIcon, UnlinkIcon, HardDrive, ExternalLinkIcon, Edit3, Copy } from 'lucide-react'; // Added more icons
+import { askNewSize, askSnapshotName } from './volumeActionPrompts';
 
 const formatDate = (dateString: string) => new Date(dateString).toLocaleString();
 
@@ -32,119 +33,44 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
     setSelectedInstanceToAttach(''); 
   };
 
-Split out each branch in `handleActionClick` into its own helper so the main function just dispatches. This flattens nesting and makes each flow self-contained.
+  // Action Handlers - refactored from the large AGENTS.md comment
+  const handleAttachAction = (volumeId: string) => {
+    if (!selectedInstanceToAttach) {
+      alert("Please select an instance to attach the volume to.");
+      return; // Important to return here
+    }
+    onAction(volumeId, 'attach', selectedInstanceToAttach);
+    setDropdownOpen(null);
+  };
 
-1) Extract prompt logic into focused functions:
+  const handleDetachAction = (volumeId: string) => {
+    onAction(volumeId, 'detach');
+    setDropdownOpen(null);
+  };
 
-// --- before or in a new file like `volumePrompts.ts` ---
-export function askNewSize(volumeId: string, currentSize: number): number | null {
-  const input = window.prompt(
-    `Enter new total size for ${volumeId} (current: ${currentSize} GB):`,
-    (currentSize + 1).toString()
-  );
-  if (!input) return null;
-  const n = parseInt(input, 10);
-  return isNaN(n) || n <= currentSize ? null : n;
-}
-
-export function askSnapshotName(defaultName: string): string | null {
-  return window.prompt(`Name for snapshot of "${defaultName}":`, defaultName);
-}
-
-// --- end volumePrompts.ts ---
-
-2) In your component, move each branch into a handler:
-
-import { askNewSize, askSnapshotName } from './volumePrompts';
-
-const handleAttach = (vid: string) => {
-  if (!selectedInstanceToAttach) {
-    alert("Please select an instance to attach the volume to.");
-    return;
-  }
-  onAction(vid, 'attach', selectedInstanceToAttach);
-};
-
-const handleExtend = (vid: string, currentSize: number) => {
-  const newSize = askNewSize(vid, currentSize);
-  if (newSize == null) {
-    alert("Invalid size. Must be > current size.");
-    return;
-  }
-  onAction(vid, 'extend', { newSize });
-};
-
-const handleSnapshot = (vid: string, volName: string) => {
-  const snap = askSnapshotName(`snapshot-${volName}-${new Date().toISOString().slice(0,10)}`);
-  if (!snap) return;
-  onAction(vid, 'create-snapshot', { snapshotName: snap });
-};
-
-const handleSimple = (vid: string, act: 'delete'|'detach') => {
-  onAction(vid, act);
-};
-
-3) Replace `handleActionClick` with a simple dispatcher:
-
-const handleActionClick = (
-  volumeId: string,
-  action: 'attach'|'detach'|'extend'|'create-snapshot'|'delete',
-  payload?: number | string
-) => {
-  const map = {
-    attach: () => handleAttach(volumeId),
-    detach: () => handleSimple(volumeId, 'detach'),
-    delete: () => handleSimple(volumeId, 'delete'),
-    extend: () => typeof payload === 'number' && handleExtend(volumeId, payload),
-    'create-snapshot': () =>
-      typeof payload === 'string' && handleSnapshot(volumeId, payload),
-  } as const;
-
-  map[action]?.();
-  setDropdownOpen(null);
-};
-    if (action === 'attach') {
-      if (!selectedInstanceToAttach) {
-        alert("Please select an instance to attach the volume to.");
-        return;
-      }
-      onAction(volumeId, action, selectedInstanceToAttach);
-    } else if (action === 'extend' && typeof currentSizeOrName === 'number') {
-      const currentSize = currentSizeOrName;
-      const newSizeStr = window.prompt(`Enter the new total size for volume ${volumeId} (current size: ${currentSize}GB). Must be larger than current size.`, (currentSize + 1).toString());
-      if (newSizeStr) {
-        const newSize = parseInt(newSizeStr, 10);
-        if (isNaN(newSize) || newSize <= currentSize) {
-          alert("Invalid size. New size must be a number greater than the current size.");
-          setDropdownOpen(null);
-          return;
-        }
-        onAction(volumeId, action, { newSize });
-      } else {
-        setDropdownOpen(null);
-        return;
-      }
-    } else if (action === 'create-snapshot') {
-      const volName = (typeof currentSizeOrName === 'string' && currentSizeOrName.trim()) ? currentSizeOrName : volumeId;
-      const snapshotNameSuggestion = `snapshot-${volName}-${new Date().toISOString().split('T')[0]}`;
-      const snapshotName = window.prompt(`Enter a name for the snapshot of volume "${volName}":`, snapshotNameSuggestion);
-      if (snapshotName) {
-        onAction(volumeId, action, { snapshotName });
-      } else {
-        setDropdownOpen(null);
-        return;
-      }
-    } else if (action === 'delete' || action === 'detach') { // Actions without extra details from prompt
-      onAction(volumeId, action);
-    } else {
-      // Should not happen if logic is correct
-      console.error("Unhandled action or missing details in handleActionClick:", action, currentSizeOrName);
-      setDropdownOpen(null);
-      return;
+  const handleDeleteAction = (volumeId: string, volumeName: string) => {
+    if (window.confirm(`Are you sure you want to delete volume "${volumeName || volumeId}"? This action cannot be undone.`)) {
+      onAction(volumeId, 'delete');
     }
     setDropdownOpen(null);
   };
-  
+
+  const handleExtendAction = (volumeId: string, volumeName: string, currentSize: number) => {
+    const newSize = askNewSize(volumeName || volumeId, currentSize);
+    if (newSize !== null) {
+      onAction(volumeId, 'extend', { newSize });
+    }
+    setDropdownOpen(null);
+  };
+
+  const handleCreateSnapshotAction = (volumeId: string, volumeName: string) => {
+    const snapshotName = askSnapshotName(volumeName || volumeId);
+    if (snapshotName !== null) {
+      onAction(volumeId, 'create-snapshot', { snapshotName });
+    }
+    setDropdownOpen(null);
+  };
+
   const getAttachedInstanceName = (volume: Volume) => {
     if (volume.attachments && volume.attachments.length > 0) {
       const instanceId = volume.attachments[0].server_id;
@@ -174,83 +100,91 @@ const handleActionClick = (
             
             return (
             <tr key={volume.id} className="hover:bg-slate-700/30 transition-colors">
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-100 flex items-center">
-                <HardDrive size={16} className="mr-2 text-slate-400"/> {volume.name}
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-100">
+                <div className="flex items-center">
+                    <HardDrive size={16} className="mr-2 text-slate-400 flex-shrink-0"/>
+                    <span className="truncate" title={volume.name || volume.id}>{volume.name || volume.id}</span>
+                </div>
+                <div className="text-xs text-slate-500 truncate" title={volume.id}>ID: {volume.id}</div>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{volume.size}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300 text-center">{volume.size}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
                 <VolumeStatusBadge status={volume.status} />
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{volume.type || 'N/A'}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{getAttachedInstanceName(volume)}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300 text-center">{volume.type || 'N/A'}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300 truncate" title={getAttachedInstanceName(volume)}>
+                {getAttachedInstanceName(volume)}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300 text-center">
                 {volume.bootable === "true" ? 'Yes' : 'No'}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-400">{formatDate(volume.created)}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium relative">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium relative text-center">
                 <Button variant="ghost" size="sm" onClick={() => toggleDropdown(volume.id)} className="text-slate-400 hover:text-teal-400">
                   <MoreVertical size={18} />
                 </Button>
                 {dropdownOpen === volume.id && (
-                  <div className="absolute right-0 mt-2 w-56 bg-slate-700 rounded-md shadow-lg z-10 border border-slate-600 p-2 space-y-2">
+                  <div className="absolute right-0 mt-2 w-64 bg-slate-700 rounded-md shadow-lg z-20 border border-slate-600 p-2 space-y-1.5">
                     {safeStatus === 'available' && (
-                      <div>
+                      <div className="space-y-1.5">
                         <Select 
                           id={`attach-instance-${volume.id}`} 
                           value={selectedInstanceToAttach} 
                           onChange={e => setSelectedInstanceToAttach(e.target.value)}
-                          containerClassName="mb-2"
+                          containerClassName="w-full"
+                          className="w-full text-sm"
                           aria-label="Select instance to attach"
+                          size="sm"
                         >
                           <option value="">-- Select Instance --</option>
-                          {instances.filter(i => i.powerState === 'Running' || i.powerState === 'Stopped' || i.powerState === 'Shutoff').map(inst => (
+                          {instances
+                            .filter(i => ['active', 'shutoff', 'stopped', 'paused', 'shelved'].includes(i.status.toLowerCase()) && (i.powerState?.toLowerCase() === 'running' || i.powerState?.toLowerCase() === 'shutdown' || i.powerState?.toLowerCase() === 'stopped' || i.powerState?.toLowerCase() === 'paused' || i.powerState === null || i.powerState === undefined )) // More permissive instance states for attachment
+                            .map(inst => (
                             <option key={inst.id} value={inst.id}>{inst.name} ({inst.status})</option>
                           ))}
                         </Select>
-                        <Button onClick={() => handleActionClick(volume.id, 'attach')} className="w-full text-sm" size="sm" disabled={!selectedInstanceToAttach}>
-                          <LinkIcon size={16} className="mr-2 text-green-400" /> Attach to Instance
+                        <Button onClick={() => handleAttachAction(volume.id)} className="w-full text-sm justify-start" size="sm" variant="ghost" disabled={!selectedInstanceToAttach}>
+                          <LinkIcon size={15} className="mr-2 text-green-400" /> Attach to Instance
                         </Button>
                       </div>
                     )}
                     {isVolumeInUse && (
-                      <Button onClick={() => handleActionClick(volume.id, 'detach')} className="w-full text-sm" size="sm">
-                        <UnlinkIcon size={16} className="mr-2 text-yellow-400" /> Detach from Instance
+                      <Button onClick={() => handleDetachAction(volume.id)} className="w-full text-sm justify-start" size="sm" variant="ghost">
+                        <UnlinkIcon size={15} className="mr-2 text-yellow-400" /> Detach from Instance
                       </Button>
                     )}
-                    <Button
-                      onClick={() => handleActionClick(volume.id, 'extend', volume.size)}
-                      className="w-full text-sm"
+                     <Button
+                      onClick={() => handleExtendAction(volume.id, volume.name, volume.size)}
+                      className="w-full text-sm justify-start"
                       size="sm"
-                      variant="outline"
-                      disabled={safeStatus !== 'available'}
+                      variant="ghost"
+                      disabled={safeStatus !== 'available' || isVolumeInUse} // Often can't extend in-use, though API might allow. Safer to disable.
                     >
-                      Extend Size
+                      <ExternalLinkIcon size={15} className="mr-2 text-blue-400" /> Extend Size
                     </Button>
                     <Button
-                      onClick={() => handleActionClick(volume.id, 'create-snapshot', volume.name)}
-                      className="w-full text-sm"
+                      onClick={() => handleCreateSnapshotAction(volume.id, volume.name)}
+                      className="w-full text-sm justify-start"
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
+                      // Snapshots can often be created from in-use volumes, but check OpenStack capabilities if issues arise.
                     >
-                      Create Snapshot
+                      <Copy size={15} className="mr-2 text-purple-400" /> Create Snapshot
                     </Button>
                     
-                    <div className="border-t border-slate-600 my-1"></div>
-                    <Button onClick={() => {
-                        if(window.confirm(`Are you sure you want to delete volume "${volume.name}"? This action cannot be undone.`)) {
-                           handleActionClick(volume.id, 'delete');
-                        } else {
-                           setDropdownOpen(null);
-                        }
-                      }} 
-                      className="w-full text-sm text-red-400 hover:bg-slate-600 hover:text-red-300" 
+                    <div className="!my-2 border-t border-slate-600"></div>
+
+                    <Button
+                      onClick={() => handleDeleteAction(volume.id, volume.name)}
+                      className="w-full text-sm justify-start text-red-400 hover:bg-red-500/10 hover:text-red-300"
                       variant="ghost"
                       size="sm"
-                      disabled={isVolumeInUse}
+                      disabled={isVolumeInUse} // Must be detached first
                     >
-                      <Trash2 size={16} className="mr-2" /> Delete Volume
+                      <Trash2 size={15} className="mr-2" /> Delete Volume
                     </Button>
-                    {isVolumeInUse && <p className="text-xs text-slate-500 mt-1">Detach volume before deleting.</p>}
+                    {isVolumeInUse && <p className="text-xs text-slate-500 px-2 pt-1">Detach volume before deleting or extending.</p>}
+                    {!isVolumeInUse && safeStatus !== 'available' && <p className="text-xs text-slate-500 px-2 pt-1">Volume must be 'available' to extend.</p>}
                   </div>
                 )}
               </td>
