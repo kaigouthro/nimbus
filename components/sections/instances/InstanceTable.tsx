@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom'; // Import Link
 import { Instance } from '../../../types';
 import Button from '../../common/Button';
-import { MoreVertical, Play, StopCircle, RefreshCw, Trash2, Terminal, Disc3, Archive, ArchiveRestore } from 'lucide-react';
+import { MoreVertical, Play, StopCircle, RefreshCw, Trash2, Terminal, Archive, ArchiveRestore, Camera, LinkIcon, UnlinkIcon } from 'lucide-react'; // Removed Disc3, Added LinkIcon, UnlinkIcon
 import Tooltip from '../../common/Tooltip'; 
 
 // Helper to format date
@@ -27,7 +27,7 @@ const StatusBadge: React.FC<{ status: string, powerState: string }> = ({ status,
 
 interface InstanceTableProps {
   instances: Instance[];
-  onAction: (instanceId: string, action: 'start' | 'stop' | 'reboot' | 'terminate' | 'get-console' | 'shelve' | 'unshelve' | 'attachVolume' | 'detachVolume') => void;
+  onAction: (instanceId: string, action: 'start' | 'stop' | 'reboot' | 'terminate' | 'get-console' | 'shelve' | 'unshelve' | 'attachVolume' | 'detachVolume' | 'create-snapshot') => void;
 }
 
 const InstanceTable: React.FC<InstanceTableProps> = ({ instances, onAction }) => {
@@ -76,7 +76,7 @@ const InstanceTable: React.FC<InstanceTableProps> = ({ instances, onAction }) =>
     }
   }, [activeActionMenu]);
   
-  const handleActionClick = (action: 'start' | 'stop' | 'reboot' | 'terminate' | 'get-console' | 'shelve' | 'unshelve' | 'attachVolume' | 'detachVolume') => {
+  const handleActionClick = (action: 'start' | 'stop' | 'reboot' | 'terminate' | 'get-console' | 'shelve' | 'unshelve' | 'attachVolume' | 'detachVolume' | 'create-snapshot') => {
     if (currentActionInstance) {
       onAction(currentActionInstance.id, action);
     }
@@ -204,6 +204,9 @@ const InstanceTable: React.FC<InstanceTableProps> = ({ instances, onAction }) =>
             )}
 
             {/* Other Actions */}
+            <button onClick={() => handleActionClick('create-snapshot')} className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600">
+              <Camera size={16} className="mr-2 text-purple-400" /> Create Snapshot
+            </button>
              <Tooltip 
                 text={!((currentActionInstance.status || '').toLowerCase() === 'active' && (currentActionInstance.powerState || '').toLowerCase() === 'running') ? "Console available for Active/Running instances" : "Open instance console"}
                 position="left"
@@ -216,9 +219,33 @@ const InstanceTable: React.FC<InstanceTableProps> = ({ instances, onAction }) =>
                     <Terminal size={16} className="mr-2" /> Get Console
                 </button>
             </Tooltip>
-            <button onClick={() => alert(`Manage volumes for ${currentActionInstance.name}`)} className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600">
-              <Disc3 size={16} className="mr-2" /> Manage Volumes
+
+            {/* Volume Actions */}
+            <div className="border-t border-slate-600 my-1"></div>
+            <p className="px-4 pt-1 pb-0.5 text-xs text-slate-400">Volume Management:</p>
+            <button
+              onClick={() => handleActionClick('attachVolume')}
+              className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600"
+            >
+              <LinkIcon size={16} className="mr-2 text-green-400" /> Attach Volume
             </button>
+            <Tooltip
+                text={!(currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0) ? "No volumes attached to this instance." : "Detach the first attached volume."}
+                position="left"
+                disabled={!(currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0)}
+            >
+              <button
+                onClick={() => {
+                    if (currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0) {
+                        handleActionClick('detachVolume');
+                    }
+                }}
+                className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!(currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0)}
+              >
+                <UnlinkIcon size={16} className="mr-2 text-yellow-400" /> Detach Volume
+              </button>
+            </Tooltip>
             
             {/* Destructive Actions */}
             <div className="border-t border-slate-600 my-1"></div>

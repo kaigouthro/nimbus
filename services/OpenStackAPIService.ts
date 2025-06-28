@@ -219,6 +219,33 @@ export const unshelveInstanceAPI = (token: string, computeUrl: string, instanceI
     return apiClient<void>(`${computeUrl}/servers/${instanceId}/action`, { method: 'POST', token, body: JSON.stringify(payload) });
 };
 
+export const createInstanceSnapshotAPI = (token: string, computeUrl: string, instanceId: string, snapshotName: string): Promise<void | { image_id: string }> => {
+  // OpenStack API for creating an image (snapshot) from a server
+  // POST /v2.1/servers/{server_id}/action
+  // Body: { "createImage": { "name": "snapshot-name", "metadata": {} } }
+  // A successful response is typically 202 Accepted.
+  // The response body is usually empty. The 'Location' header in the response
+  // often contains a URL to track the image creation task or the image itself.
+  const payload = {
+    createImage: {
+      name: snapshotName,
+      metadata: {
+        // Common metadata, can be extended as needed
+        'image_type': 'snapshot', // Standard metadata key to indicate it's a snapshot
+        'instance_uuid': instanceId // Helps trace snapshot back to instance
+      }
+    }
+  };
+  // Explicitly define return type. If OpenStack returns image_id in body (non-standard but possible), it could be captured.
+  // However, standard is 202 with no body, relying on Location header or subsequent image list.
+  // For this client, we'll assume a void response on success as per typical 202.
+  return apiClient<void>(`${computeUrl}/servers/${instanceId}/action`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload)
+  });
+};
+
 
 // Cinder (Block Storage)
 export const fetchVolumes = (token: string, volumeUrl: string): Promise<Volume[]> =>
@@ -241,6 +268,48 @@ export const detachVolumeAPI = (token: string, computeUrl: string, instanceId: s
     // Note: OpenStack uses the volumeId as the attachmentId in this specific API path
     return apiClient<void>(`${computeUrl}/servers/${instanceId}/os-volume_attachments/${attachmentId}`, { method: 'DELETE', token });
 }
+
+export const extendVolumeAPI = (token: string, volumeUrl: string, volumeId: string, newSize: number): Promise<void> => {
+  // OpenStack API for extending a volume
+  // POST /v3/{project_id}/volumes/{volume_id}/action  (or similar, depending on exact Cinder API version in use)
+  // Body: { "os-extend": { "new_size": new_size_in_gb } }
+  // A successful response is typically 202 Accepted with no body.
+  const payload = {
+    "os-extend": {
+      "new_size": newSize
+    }
+  };
+  return apiClient<void>(`${volumeUrl}/volumes/${volumeId}/action`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload)
+  });
+};
+
+export const createVolumeSnapshotAPI = (token: string, volumeUrl: string, volumeId: string, snapshotName: string, description?: string): Promise<any> => { // Return type can be more specific if snapshot object is defined
+  // OpenStack API for creating a volume snapshot
+  // POST /v3/{project_id}/snapshots or /snapshots depending on base volumeUrl
+  // Body: { "snapshot": { "name": "snapshot-name", "volume_id": "volume-id", "description": "...", "force": false/true } }
+  // A successful response is typically 202 Accepted, and the body contains the new snapshot object.
+  const payload = {
+    snapshot: {
+      name: snapshotName,
+      volume_id: volumeId,
+      description: description || `Snapshot of volume ${volumeId}`,
+      // 'force: true' can be used to snapshot an in-use volume, but might depend on cloud config.
+      // Defaulting to not forcing for now. Add if needed.
+      // force: false
+    }
+  };
+  // Assuming volumeUrl is like http://<cinder_host>:<port>/v3/<project_id>
+  // So, just appending /snapshots should work.
+  return apiClient<any>(`${volumeUrl}/snapshots`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload)
+  });
+  // TODO: Define a VolumeSnapshot type and use it for the Promise<VolumeSnapshot>
+};
 
 // Neutron (Networking)
 const NEUTRON_API_VERSION = "v2.0";
