@@ -55,7 +55,7 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
         return;
       }
     } else if (action === 'create-snapshot') {
-      const volName = typeof currentSizeOrName === 'string' ? currentSizeOrName : volumeId;
+      const volName = (typeof currentSizeOrName === 'string' && currentSizeOrName.trim()) ? currentSizeOrName : volumeId;
       const snapshotNameSuggestion = `snapshot-${volName}-${new Date().toISOString().split('T')[0]}`;
       const snapshotName = window.prompt(`Enter a name for the snapshot of volume "${volName}":`, snapshotNameSuggestion);
       if (snapshotName) {
