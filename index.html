@@ -1,0 +1,78 @@
+
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NimbusEasyStack</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class', // or 'media'
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                DEFAULT: 'var(--color-primary-DEFAULT)',
+                light: 'var(--color-primary-light)',
+                dark: 'var(--color-primary-dark)',
+              },
+              accent: {
+                DEFAULT: 'var(--color-accent-DEFAULT)',
+                hover: 'var(--color-accent-hover)',
+              },
+              slate: {
+                900: '#0F172A', // Main dark background
+                800: '#1E293B', // Card, element background
+                700: '#334155', // Borders
+                600: '#475569',
+                500: '#64748B',
+                400: '#94A3B8',
+                300: '#CBD5E1', // Secondary text
+                200: '#E2E8F0', // Primary text
+                100: '#F1F5F9', 
+              },
+              teal: {
+                400: '#2DD4BF',
+                500: '#14B8A6',
+                600: '#0D9488',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style type="text/tailwindcss">
+      @layer base {
+        :root {
+          --color-primary-DEFAULT: #0F172A; /* slate-900 */
+          --color-primary-light:  #1E293B; /* slate-800 */
+          --color-primary-dark: #0F172A; /* slate-900 */
+          --color-accent-DEFAULT: #14B8A6; /* teal-500 */
+          --color-accent-hover: #0D9488; /* teal-600 */
+        }
+        body {
+          @apply bg-slate-900 text-slate-200 antialiased;
+        }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.3.0",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.6.1",
+    "lucide-react": "https://esm.sh/lucide-react@^0.511.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

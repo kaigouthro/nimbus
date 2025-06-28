@@ -1,0 +1,6 @@
+{
+  "name": "NimbusEasyStack: AI-Powered OpenStack Manager",
+  "description": "A user-friendly interface for managing OpenStack cloud resources, enhanced with AI assistance for streamlined operations and guidance. Simplifies common tasks like instance, volume, and network management.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
