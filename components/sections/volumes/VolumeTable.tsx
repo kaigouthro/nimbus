@@ -32,7 +32,77 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
     setSelectedInstanceToAttach(''); 
   };
 
-  const handleActionClick = (volumeId: string, action: 'delete' | 'attach' | 'detach' | 'extend' | 'create-snapshot', currentSizeOrName?: number | string) => {
+Split out each branch in `handleActionClick` into its own helper so the main function just dispatches. This flattens nesting and makes each flow self-contained.
+
+1) Extract prompt logic into focused functions:
+
+// --- before or in a new file like `volumePrompts.ts` ---
+export function askNewSize(volumeId: string, currentSize: number): number | null {
+  const input = window.prompt(
+    `Enter new total size for ${volumeId} (current: ${currentSize} GB):`,
+    (currentSize + 1).toString()
+  );
+  if (!input) return null;
+  const n = parseInt(input, 10);
+  return isNaN(n) || n <= currentSize ? null : n;
+}
+
+export function askSnapshotName(defaultName: string): string | null {
+  return window.prompt(`Name for snapshot of "${defaultName}":`, defaultName);
+}
+
+// --- end volumePrompts.ts ---
+
+2) In your component, move each branch into a handler:
+
+import { askNewSize, askSnapshotName } from './volumePrompts';
+
+const handleAttach = (vid: string) => {
+  if (!selectedInstanceToAttach) {
+    alert("Please select an instance to attach the volume to.");
+    return;
+  }
+  onAction(vid, 'attach', selectedInstanceToAttach);
+};
+
+const handleExtend = (vid: string, currentSize: number) => {
+  const newSize = askNewSize(vid, currentSize);
+  if (newSize == null) {
+    alert("Invalid size. Must be > current size.");
+    return;
+  }
+  onAction(vid, 'extend', { newSize });
+};
+
+const handleSnapshot = (vid: string, volName: string) => {
+  const snap = askSnapshotName(`snapshot-${volName}-${new Date().toISOString().slice(0,10)}`);
+  if (!snap) return;
+  onAction(vid, 'create-snapshot', { snapshotName: snap });
+};
+
+const handleSimple = (vid: string, act: 'delete'|'detach') => {
+  onAction(vid, act);
+};
+
+3) Replace `handleActionClick` with a simple dispatcher:
+
+const handleActionClick = (
+  volumeId: string,
+  action: 'attach'|'detach'|'extend'|'create-snapshot'|'delete',
+  payload?: number | string
+) => {
+  const map = {
+    attach: () => handleAttach(volumeId),
+    detach: () => handleSimple(volumeId, 'detach'),
+    delete: () => handleSimple(volumeId, 'delete'),
+    extend: () => typeof payload === 'number' && handleExtend(volumeId, payload),
+    'create-snapshot': () =>
+      typeof payload === 'string' && handleSnapshot(volumeId, payload),
+  } as const;
+
+  map[action]?.();
+  setDropdownOpen(null);
+};
     if (action === 'attach') {
       if (!selectedInstanceToAttach) {
         alert("Please select an instance to attach the volume to.");
