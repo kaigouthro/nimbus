@@ -196,7 +196,11 @@ const AuthForm: React.FC = () => {
       localStorage.setItem('nimbus-lastDomain', domainName);
       localStorage.setItem('nimbus-lastProjectIdentifier', projectIdentifier);
       localStorage.setItem('nimbus-lastScopeByProjectId', JSON.stringify(scopeByProjectId));
-      if (projectDomainName) localStorage.setItem('nimbus-lastProjectDomainName', projectDomainName);
+      if (projectDomainName) {
+        localStorage.setItem('nimbus-lastProjectDomainName', projectDomainName);
+      } else {
+        localStorage.removeItem('nimbus-lastProjectDomainName');
+      }
 
       login(cleanAuthUrl, token, serviceCatalog, projectDetails, userDetails);
     } catch (err) {
