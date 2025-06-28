@@ -135,7 +135,17 @@ const DashboardPanel: React.FC = () => {
     return quota[type];
   };
   
-  const runningInstances = instances.filter(i => i.powerState === 'Running').length;
+  const instanceCountsByPowerState = instances.reduce((acc, curr) => {
+    const state = curr.powerState || 'Unknown';
+    acc[state] = (acc[state] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const runningInstances = instanceCountsByPowerState['Running'] || 0;
+  const shelvedInstances = (instanceCountsByPowerState['Shelved'] || 0) + (instanceCountsByPowerState['Shelved_Offloaded'] || 0);
+  const errorInstances = instanceCountsByPowerState['Error'] || 0;
+  const shutoffInstances = instanceCountsByPowerState['Shutoff'] || 0;
+  // Add other states as needed, e.g., Building, Paused
 
   const importantQuotas = [
     { name: "vCPUs", resourceKey: "vcpus", icon: <Cpu className="h-8 w-8 text-blue-400" /> },
@@ -147,11 +157,26 @@ const DashboardPanel: React.FC = () => {
     <div className="space-y-6">
       <h2 className="text-3xl font-semibold text-slate-100">Dashboard Overview</h2>
       
+      <Card title="Instance Status Breakdown" className="mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 p-4">
+            <QuickStatCard title="Total Instances" value={instances.length.toString()} icon={<Server className="h-8 w-8 text-slate-400"/>} unit="Total" />
+            <QuickStatCard title="Running" value={runningInstances.toString()} icon={<Server className="h-8 w-8 text-green-400"/>} unit="Running" />
+            <QuickStatCard title="Shutoff" value={shutoffInstances.toString()} icon={<Server className="h-8 w-8 text-yellow-400"/>} unit="Shutoff" />
+            <QuickStatCard title="Shelved" value={shelvedInstances.toString()} icon={<Server className="h-8 w-8 text-sky-400"/>} unit="Shelved" />
+            <QuickStatCard title="Error" value={errorInstances.toString()} icon={<AlertTriangle className="h-8 w-8 text-red-400"/>} unit="Error" />
+            {/* Add more states like Building, Paused if desired */}
+        </div>
+      </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <QuickStatCard title="Running Instances" value={runningInstances.toString()} total={instances.length} icon={<Server className="h-10 w-10 text-teal-400" />} unit="Instances" />
+        {/* These cards could be merged into Key Quotas or kept separate for high-level view */}
+        {/* For now, let's keep them to show general resource counts that are also quotas */}
         <QuickStatCard title="Total Volumes" value={getQuotaValue('Volumes', 'used').toString()} total={getQuotaValue('Volumes', 'limit') as number} icon={<Database className="h-10 w-10 text-purple-400" />} unit="Volumes" />
         <QuickStatCard title="Total Networks" value={getQuotaValue('Networks', 'used').toString()} total={getQuotaValue('Networks', 'limit') as number} icon={<NetworkLucideIcon className="h-10 w-10 text-indigo-400" />} unit="Networks" />
         <QuickStatCard title="Floating IPs" value={getQuotaValue('Floating IPs', 'used').toString()} total={getQuotaValue('Floating IPs', 'limit') as number} icon={<Zap className="h-10 w-10 text-orange-400" />} unit="Floating IPs" />
+        {/* Example for a quota not shown as a main stat card before, e.g. Security Groups */}
+        <QuickStatCard title="Security Groups" value={getQuotaValue('Security Groups', 'used').toString()} total={getQuotaValue('Security Groups', 'limit') as number} icon={<Shield className="h-10 w-10 text-rose-400" />} unit="Groups" />
+
       </div>
 
       <Card title="Key Quotas">

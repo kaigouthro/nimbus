@@ -6,22 +6,46 @@ import { MoreVertical, Play, StopCircle, RefreshCw, Trash2, Terminal, Archive, A
 import Tooltip from '../../common/Tooltip'; 
 
 // Helper to format date
-const formatDate = (dateString: string) => new Date(dateString).toLocaleString();
+const formatDate = (dateString?: string | null) => {
+  if (!dateString) return 'N/A';
+  try {
+    return new Date(dateString).toLocaleString();
+  } catch (e) {
+    return dateString; // if parsing fails, show original string
+  }
+};
 
 // Instance status badge
-const StatusBadge: React.FC<{ status: string, powerState: string }> = ({ status, powerState }) => {
+const StatusBadge: React.FC<{ status: string, powerState: string, vmState?: string, taskState?: string | null }> = ({ status, powerState, vmState, taskState }) => {
   let colorClasses = 'bg-slate-500 text-slate-100'; // Default
-  const lowerStatus = (status || '').toLowerCase();
-  const lowerPowerState = (powerState || '').toLowerCase();
+  const effectiveStatus = (vmState || status || '').toLowerCase();
+  const effectivePowerState = (powerState || '').toLowerCase();
+  const effectiveTaskState = (taskState || '').toLowerCase();
 
-  if (lowerPowerState === 'running' && (lowerStatus === 'active' || lowerStatus === 'ok')) colorClasses = 'bg-green-500 text-green-100';
-  else if (lowerPowerState === 'stopped' || lowerPowerState === 'shutoff' || lowerStatus === 'shutoff' || lowerStatus === 'stopped') colorClasses = 'bg-red-500 text-red-100';
-  else if (lowerStatus.includes('shelved')) colorClasses = 'bg-sky-500 text-sky-100';
-  else if (lowerPowerState === 'building' || lowerStatus.includes('build') || lowerStatus.includes('migrat') || lowerStatus.includes('rebuild') || lowerStatus.includes('resiz') || lowerStatus.includes('verify')) colorClasses = 'bg-yellow-500 text-yellow-100 animate-pulse';
-  else if (lowerPowerState === 'error' || lowerStatus.includes('error')) colorClasses = 'bg-orange-600 text-orange-100';
-  else if (lowerPowerState === 'paused' || lowerStatus === 'paused') colorClasses = 'bg-indigo-500 text-indigo-100';
+  if (effectiveTaskState && effectiveTaskState !== 'none') {
+     colorClasses = 'bg-yellow-500 text-yellow-100 animate-pulse'; // Indicate transition
+  } else if (effectiveStatus === 'error' || effectivePowerState === 'error') {
+    colorClasses = 'bg-red-600 text-red-100';
+  } else if (effectiveStatus.includes('shelved')) {
+    colorClasses = 'bg-sky-500 text-sky-100';
+  } else if (effectiveStatus === 'active' && effectivePowerState === 'running') {
+    colorClasses = 'bg-green-500 text-green-100';
+  } else if (effectiveStatus === 'stopped' || effectiveStatus === 'shutoff' || effectivePowerState === 'shutoff') {
+    colorClasses = 'bg-orange-500 text-orange-100';
+  } else if (effectiveStatus === 'paused' || effectivePowerState === 'paused') {
+    colorClasses = 'bg-indigo-500 text-indigo-100';
+  } else if (effectiveStatus === 'building' || effectiveStatus === 'rebuild' || effectivePowerState === 'building') {
+     colorClasses = 'bg-blue-500 text-blue-100 animate-pulse';
+  }
 
-  return <span className={`px-2 py-1 text-xs font-semibold rounded-full ${colorClasses}`}>{status || 'N/A'} ({powerState || 'N/A'})</span>;
+
+  return (
+    <Tooltip text={`VM State: ${vmState || 'N/A'} | Task State: ${taskState || 'None'}`}>
+        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${colorClasses}`}>
+            {status || 'N/A'} ({powerState || 'N/A'})
+        </span>
+    </Tooltip>
+  );
 };
 
 
@@ -110,11 +134,11 @@ const InstanceTable: React.FC<InstanceTableProps> = ({ instances, onAction }) =>
   return (
     <div className="flex-1 flex flex-col relative" ref={tableContainerRef}>
       <div className="overflow-x-auto flex-1">
-        <table className="min-w-full divide-y divide-slate-700">
-          <thead className="bg-slate-700/50">
+        <table className="min-w-full divide-y divide-slate-700 text-sm">
+          <thead className="bg-slate-700/50 sticky top-0 z-10"> {/* Added sticky top for header */}
             <tr>
-              {['Name', 'Status', 'Flavor', 'Image', 'IP Addresses', 'Created', 'Actions'].map(header => (
-                <th key={header} scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+              {['Name', 'Status', 'IP Addresses', 'Availability Zone', 'Launched At', 'Host ID', 'Actions'].map(header => (
+                <th key={header} scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider whitespace-nowrap">
                   {header}
                 </th>
               ))}
@@ -123,19 +147,28 @@ const InstanceTable: React.FC<InstanceTableProps> = ({ instances, onAction }) =>
           <tbody className="divide-y divide-slate-700">
             {instances.map((instance) => (
               <tr key={instance.id} className="hover:bg-slate-700/30 transition-colors">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-100">
+                <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-100">
                    <Link to={`/instances/${instance.id}`} className="hover:text-teal-400 hover:underline">
                     {instance.name}
                   </Link>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <StatusBadge status={(instance.status || '')} powerState={(instance.powerState || '')} />
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <StatusBadge
+                    status={instance.status || ''}
+                    powerState={instance.powerState || ''}
+                    vmState={instance.vm_state}
+                    taskState={instance.task_state}
+                  />
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{instance.flavor?.name || instance.flavor?.id || 'N/A'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{instance.image?.name || instance.image?.id || 'N/A'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{instance.ipAddress || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-400">{formatDate(instance.created)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <td className="px-4 py-3 whitespace-nowrap text-slate-300">{instance.ipAddress || '-'}</td>
+                <td className="px-4 py-3 whitespace-nowrap text-slate-300">{instance['OS-EXT-AZ:availability_zone'] || 'N/A'}</td>
+                <td className="px-4 py-3 whitespace-nowrap text-slate-400">{formatDate(instance.launched_at)}</td>
+                <td className="px-4 py-3 whitespace-nowrap text-slate-300">
+                    <Tooltip text={instance.hostId || 'N/A'}>
+                        <span>{instance.hostId ? `${instance.hostId.substring(0, 15)}...` : 'N/A'}</span>
+                    </Tooltip>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium"> {/* Adjusted padding */}
                   <Button 
                     variant="ghost" 
                     size="sm" 
@@ -169,94 +202,122 @@ const InstanceTable: React.FC<InstanceTableProps> = ({ instances, onAction }) =>
               Actions for: <span className="font-semibold text-slate-200 truncate block max-w-full">{currentActionInstance.name}</span>
             </p>
             
-            {/* Power Actions */}
-            {(currentActionInstance.powerState || '').toLowerCase() !== 'running' && 
-             (currentActionInstance.status || '').toLowerCase() !== 'shelved' && 
-             (currentActionInstance.status || '').toLowerCase() !== 'shelved_offloaded' && 
-             (currentActionInstance.status || '').toLowerCase() !== 'build' &&
-             (currentActionInstance.status || '').toLowerCase() !== 'error' &&
+            {/* Power Actions - simplified logic based on powerState and task_state */}
+            {currentActionInstance.powerState !== 'Running' &&
+             currentActionInstance.powerState !== 'Shelved' &&
+             currentActionInstance.powerState !== 'Shelved_Offloaded' &&
+             !currentActionInstance.task_state && // No ongoing task
+             currentActionInstance.powerState !== 'Error' && // Don't allow start if in error state, user should check details
              (
-              <button onClick={() => handleActionClick('start')} className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600">
+              <button
+                onClick={() => handleActionClick('start')}
+                className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600"
+              >
                 <Play size={16} className="mr-2 text-green-400" /> Start
               </button>
             )}
-            {(currentActionInstance.powerState || '').toLowerCase() === 'running' && (currentActionInstance.status || '').toLowerCase() === 'active' && (
+
+            {currentActionInstance.powerState === 'Running' && !currentActionInstance.task_state && (
               <>
-                <button onClick={() => handleActionClick('stop')} className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600">
+                <button
+                  onClick={() => handleActionClick('stop')}
+                  className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600"
+                >
                   <StopCircle size={16} className="mr-2 text-yellow-400" /> Stop
                 </button>
-                <button onClick={() => handleActionClick('reboot')} className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600">
+                <button
+                  onClick={() => handleActionClick('reboot')}
+                  className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600"
+                >
                   <RefreshCw size={16} className="mr-2 text-blue-400" /> Reboot
                 </button>
               </>
             )}
 
-            {/* Shelve/Unshelve Actions */}
-            {((currentActionInstance.status || '').toLowerCase() === 'active' || (currentActionInstance.status || '').toLowerCase() === 'shutoff') && (
-              <button onClick={() => handleActionClick('shelve')} className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600">
+            {/* Shelve/Unshelve Actions - simplified logic */}
+            {(currentActionInstance.powerState === 'Running' || currentActionInstance.powerState === 'Shutoff') &&
+             !currentActionInstance.task_state && (
+              <button
+                onClick={() => handleActionClick('shelve')}
+                className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600"
+              >
                 <Archive size={16} className="mr-2 text-sky-400" /> Shelve
               </button>
             )}
-            {((currentActionInstance.status || '').toLowerCase() === 'shelved' || (currentActionInstance.status || '').toLowerCase() === 'shelved_offloaded') && (
-              <button onClick={() => handleActionClick('unshelve')} className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600">
+
+            {(currentActionInstance.powerState === 'Shelved' || currentActionInstance.powerState === 'Shelved_Offloaded') &&
+             !currentActionInstance.task_state && (
+              <button
+                onClick={() => handleActionClick('unshelve')}
+                className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600"
+              >
                 <ArchiveRestore size={16} className="mr-2 text-sky-400" /> Unshelve
               </button>
             )}
 
-            {/* Other Actions */}
-            <button onClick={() => handleActionClick('create-snapshot')} className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600">
+            {/* Other Actions - disable if task_state is present */}
+            <button
+              onClick={() => handleActionClick('create-snapshot')}
+              className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!!currentActionInstance.task_state || currentActionInstance.powerState === 'Shelved_Offloaded'}
+            >
               <Camera size={16} className="mr-2 text-purple-400" /> Create Snapshot
             </button>
-             <Tooltip 
-                text={!((currentActionInstance.status || '').toLowerCase() === 'active' && (currentActionInstance.powerState || '').toLowerCase() === 'running') ? "Console available for Active/Running instances" : "Open instance console"}
+
+            <Tooltip
+                text={(currentActionInstance.powerState !== 'Running' && currentActionInstance.powerState !== 'Shutoff') ? "Console typically available for Running or Shutoff instances" : "Open instance console"}
                 position="left"
             >
                 <button 
                     onClick={() => handleActionClick('get-console')} 
                     className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!((currentActionInstance.status || '').toLowerCase() === 'active' && (currentActionInstance.powerState || '').toLowerCase() === 'running')}
+                    disabled={!!currentActionInstance.task_state || (currentActionInstance.powerState !== 'Running' && currentActionInstance.powerState !== 'Shutoff')}
                 >
                     <Terminal size={16} className="mr-2" /> Get Console
                 </button>
             </Tooltip>
 
-            {/* Volume Actions */}
+            {/* Volume Actions - disable if task_state is present */}
             <div className="border-t border-slate-600 my-1"></div>
             <p className="px-4 pt-1 pb-0.5 text-xs text-slate-400">Volume Management:</p>
             <button
               onClick={() => handleActionClick('attachVolume')}
-              className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600"
+              className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!!currentActionInstance.task_state}
             >
               <LinkIcon size={16} className="mr-2 text-green-400" /> Attach Volume
             </button>
-            <Tooltip
-                text={!(currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0) ? "No volumes attached to this instance." : "Detach the first attached volume."}
+             <Tooltip
+                text={!(currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0) ? "No volumes attached." : "Detach a volume."}
                 position="left"
-                disabled={!(currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0)}
-            >
-              <button
-                onClick={() => {
-                    if (currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0) {
-                        handleActionClick('detachVolume');
-                    }
-                }}
-                className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!(currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0)}
-              >
-                <UnlinkIcon size={16} className="mr-2 text-yellow-400" /> Detach Volume
-              </button>
+             >
+                <button
+                    onClick={() => {
+                        if (currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0) {
+                            handleActionClick('detachVolume');
+                        }
+                    }}
+                    className="w-full text-left flex items-center px-4 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!!currentActionInstance.task_state || !(currentActionInstance['os-extended-volumes:volumes_attached'] && currentActionInstance['os-extended-volumes:volumes_attached'].length > 0)}
+                >
+                    <UnlinkIcon size={16} className="mr-2 text-yellow-400" /> Detach Volume
+                </button>
             </Tooltip>
             
-            {/* Destructive Actions */}
+            {/* Destructive Actions - disable if task_state is present */}
             <div className="border-t border-slate-600 my-1"></div>
-            <button onClick={() => {
-              if (window.confirm(`Are you sure you want to terminate instance "${currentActionInstance.name}"? This action cannot be undone.`)) {
-                handleActionClick('terminate');
-              } else {
-                setActiveActionMenu(null); 
-                setCurrentActionInstance(null);
-              }
-            }} className="w-full text-left flex items-center px-4 py-2 text-sm text-red-400 hover:bg-slate-600 hover:text-red-300">
+            <button
+                onClick={() => {
+                    if (window.confirm(`Are you sure you want to terminate instance "${currentActionInstance.name}"? This action cannot be undone.`)) {
+                        handleActionClick('terminate');
+                    } else {
+                        setActiveActionMenu(null);
+                        setCurrentActionInstance(null);
+                    }
+                }}
+                className="w-full text-left flex items-center px-4 py-2 text-sm text-red-400 hover:bg-slate-600 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!!currentActionInstance.task_state}
+            >
               <Trash2 size={16} className="mr-2" /> Terminate
             </button>
           </div>
