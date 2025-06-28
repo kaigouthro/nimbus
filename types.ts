@@ -28,7 +28,9 @@ export interface Instance extends OpenStackResource {
     | "Paused"
     | "Error"
     | "Building"
-    | "Shutoff"; // Added Shutoff
+    | "Shutoff"
+    | "Shelved" // Added for shelved state
+    | "Shelved_Offloaded"; // Added for shelved offloaded state
   keyPair?: string; // key_name
   securityGroups?: string[]; // names or IDs (can be objects from API)
   ["os-extended-volumes:volumes_attached"]?: { id: string }[]; // Corrected structure
@@ -36,6 +38,19 @@ export interface Instance extends OpenStackResource {
   ["OS-EXT-AZ:availability_zone"]?: string;
   userId?: string; // user_id from server details
   hostId?: string; // OS-EXT-SRV-ATTR:host from server details
+
+  // Additional detailed fields from Nova API
+  vm_state?: string; // e.g., active, error, stopped, shelved, shelved_offloaded
+  task_state?: string | null; // e.g., shelving, unshelving, resizing, None
+  launched_at?: string | null; // ISO date string, OS-SRV-USG:launched_at
+  terminated_at?: string | null; // ISO date string, OS-SRV-USG:terminated_at
+  locked?: boolean; // Indicates if the server is locked
+  description?: string | null; // User-provided description
+  hostname?: string; // OS-EXT-SRV-ATTR:hostname
+  project_id?: string; // tenant_id
+  // Add any other relevant fields you might need:
+  // e.g., accessIPv4, accessIPv6, config_drive, progress (for build/resize)
+
   flavorRef?: string; // Kept for compatibility or alternative API paths
   imageRef?: string; // Kept for compatibility or alternative API paths
 }
@@ -333,6 +348,19 @@ export interface NovaRawServer {
   "OS-EXT-AZ:availability_zone": string;
   user_id: string;
   "OS-EXT-SRV-ATTR:host": string;
+
+  // Fields for extended status and attributes
+  "OS-EXT-STS:task_state"?: string | null;
+  "OS-EXT-STS:vm_state"?: string;
+  "OS-EXT-STS:power_state"?: number; // This seems to be redundant with top-level power_state but good to have if different
+  "OS-SRV-USG:launched_at"?: string | null;
+  "OS-SRV-USG:terminated_at"?: string | null;
+  "locked"?: boolean | string; // Can be boolean or string "true"/"false"
+  "description"?: string | null;
+  "OS-EXT-SRV-ATTR:hostname"?: string;
+  "OS-EXT-SRV-ATTR:hypervisor_hostname"?: string; // Often the actual host
+  "tenant_id"?: string; // Project ID
+
   // other fields...
 }
 

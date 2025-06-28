@@ -116,40 +116,59 @@ const mapRawServerToInstance = (rawServer: NovaRawServer): Instance => {
   }
 
   let powerState: Instance['powerState'] = 'Error'; // Default
-  switch (rawServer.power_state) {
-    case 0: powerState = 'Shutoff'; break; 
-    case 1: powerState = 'Running'; break;
-    case 3: powerState = 'Paused'; break;
-    case 4: powerState = 'Shutoff'; break; 
-    case 6: powerState = 'Error'; break; 
-    case 7: powerState = 'Paused'; break; 
-    default: 
-      console.warn(`Unknown OpenStack power_state code: ${rawServer.power_state} for instance ${rawServer.id}. Mapping to 'Error'.`);
-      powerState = 'Error'; 
-      break;
-  }
-  
-  // Prioritize task state if it indicates an issue or transition
-  const rawStatusUpper = rawServer.status.toUpperCase();
-  if (rawStatusUpper === 'ERROR') {
+  const osStatus = rawServer.status.toUpperCase();
+  const vmState = rawServer['OS-EXT-STS:vm_state'] || osStatus; // Use vm_state if available, fallback to status
+
+  // Determine PowerState based on vm_state and power_state
+  if (vmState === 'SHELVED' || vmState === 'SHELVED_OFFLOADED') {
+    powerState = vmState === 'SHELVED' ? 'Shelved' : 'Shelved_Offloaded';
+  } else if (vmState === 'ERROR') {
     powerState = 'Error';
-  } else if (rawStatusUpper === 'BUILD' || rawStatusUpper === 'REBUILD') {
+  } else if (vmState === 'BUILDING' || vmState === 'REBUILD' || osStatus === 'BUILD' || osStatus === 'REBUILD') {
     powerState = 'Building';
-  } else if (rawStatusUpper === 'SHELVED' || rawStatusUpper === 'SHELVED_OFFLOADED') {
+  } else if (vmState === 'STOPPED' || vmState === 'SHUTOFF') {
     powerState = 'Shutoff';
+  } else if (vmState === 'PAUSED') {
+    powerState = 'Paused';
+  } else if (vmState === 'ACTIVE' || vmState === 'RUNNING') { // 'ACTIVE' usually means running
+    switch (rawServer.power_state) {
+        case 1: powerState = 'Running'; break;
+        case 3: powerState = 'Paused'; break; // Should be covered by vmState check but good fallback
+        case 4: powerState = 'Shutoff'; break; // Should be covered by vmState check
+        default: powerState = 'Running'; // If vm_state is ACTIVE, assume Running unless power_state says otherwise
+    }
+  } else {
+     // Fallback to power_state numerical codes if vm_state is not decisive
+    switch (rawServer.power_state) {
+        case 0: powerState = 'Shutoff'; break; // NOSTATE, often maps to Shutoff in practice if vm_state unknown
+        case 1: powerState = 'Running'; break;
+        case 3: powerState = 'Paused'; break;
+        case 4: powerState = 'Shutoff'; break;
+        case 6: powerState = 'Error'; break; // CRASHED
+        case 7: powerState = 'Paused'; break; // SUSPENDED
+        default:
+            console.warn(`Unknown OpenStack power_state code: ${rawServer.power_state} and ambiguous vm_state: ${vmState} for instance ${rawServer.id}. Mapping to 'Error'.`);
+            powerState = 'Error';
+            break;
+    }
+  }
+
+  // Override with task_state if it indicates an error or specific transition
+  const taskState = rawServer['OS-EXT-STS:task_state'];
+  if (taskState && taskState.toUpperCase().includes('ERROR')) {
+    powerState = 'Error';
   }
   // Note: 'ACTIVE' status can coexist with 'Running' or 'Shutoff' power_state.
-  // The power_state derived from the numerical code is usually more indicative of actual power.
-
+  // The vm_state and power_state derived logic above should be more accurate.
 
   return {
     id: rawServer.id,
     name: rawServer.name,
-    status: rawServer.status,
-    flavor: { id: rawServer.flavor.id, name: undefined },
-    image: { id: rawServer.image.id, name: undefined },
+    status: rawServer.status, // This is the general status like ACTIVE, SHUTOFF, ERROR, SHELVED
+    flavor: { id: rawServer.flavor.id, name: undefined /* Consider fetching flavor details if needed */ },
+    image: { id: rawServer.image.id, name: undefined /* Consider fetching image details if needed */ },
     ipAddress: ipAddress,
-    powerState: powerState,
+    powerState: powerState, // More granular power state for UI display
     keyPair: rawServer.key_name || undefined,
     securityGroups: rawServer.security_groups ? rawServer.security_groups.map(sg => sg.name) : [],
     ['os-extended-volumes:volumes_attached']: rawServer['os-extended-volumes:volumes_attached'],
@@ -157,6 +176,16 @@ const mapRawServerToInstance = (rawServer: NovaRawServer): Instance => {
     ['OS-EXT-AZ:availability_zone']: rawServer['OS-EXT-AZ:availability_zone'],
     userId: rawServer.user_id,
     hostId: rawServer['OS-EXT-SRV-ATTR:host'],
+
+    // Populate new fields
+    vm_state: rawServer['OS-EXT-STS:vm_state'] || rawServer.status, // Fallback to general status if specific vm_state is missing
+    task_state: rawServer['OS-EXT-STS:task_state'] || null,
+    launched_at: rawServer['OS-SRV-USG:launched_at'] || null,
+    terminated_at: rawServer['OS-SRV-USG:terminated_at'] || null,
+    locked: rawServer.locked === true || String(rawServer.locked).toLowerCase() === 'true', // Ensure boolean
+    description: rawServer.description || null,
+    hostname: rawServer['OS-EXT-SRV-ATTR:hostname'] || rawServer['OS-EXT-SRV-ATTR:hypervisor_hostname'] || null, // Take hostname or hypervisor_hostname
+    project_id: rawServer.tenant_id, // tenant_id is the project_id
   };
 };
 
