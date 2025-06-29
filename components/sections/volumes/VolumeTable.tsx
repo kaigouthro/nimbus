@@ -5,7 +5,26 @@ import Select from '../../common/Select';
 import { MoreVertical, Trash2, LinkIcon, UnlinkIcon, HardDrive, ExternalLinkIcon, Edit3, Copy } from 'lucide-react'; // Added more icons
 import { askNewSize, askSnapshotName } from './volumeActionPrompts';
 
-const formatDate = (dateString: string) => new Date(dateString).toLocaleString();
+const formatDate = (dateString: string) => {
+  if (!dateString) return 'N/A';
+  try {
+    const date = new Date(dateString);
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return 'Invalid Date';
+    }
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  } catch (error) {
+    console.error("Error formatting date:", dateString, error);
+    return 'Invalid Date';
+  }
+};
 
 const VolumeStatusBadge: React.FC<{ status: string }> = ({ status }) => {
   let colorClasses = 'bg-slate-500 text-slate-100'; // Default
@@ -39,7 +58,7 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
       alert("Please select an instance to attach the volume to.");
       return; // Important to return here
     }
-    onAction(volumeId, 'attach', selectedInstanceToAttach);
+    onAction(volumeId, 'attach', { instanceId: selectedInstanceToAttach });
     setDropdownOpen(null);
   };
 
@@ -82,7 +101,7 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
   };
 
   return (
-    <div className="overflow-x-auto bg-slate-800 rounded-lg">
+    <div className="bg-slate-800 rounded-lg">
       <table className="min-w-full divide-y divide-slate-700">
         <thead className="bg-slate-700/50">
           <tr>
@@ -105,7 +124,7 @@ const VolumeTable: React.FC<VolumeTableProps> = ({ volumes, instances, onAction 
                     <HardDrive size={16} className="mr-2 text-slate-400 flex-shrink-0"/>
                     <span className="truncate" title={volume.name || volume.id}>{volume.name || volume.id}</span>
                 </div>
-                <div className="text-xs text-slate-500 truncate" title={volume.id}>ID: {volume.id}</div>
+                <div className="text-xs text-slate-500" title={volume.id}>ID: {volume.id}</div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300 text-center">{volume.size}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
